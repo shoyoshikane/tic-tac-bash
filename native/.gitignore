@@ -7,4 +7,3 @@ build/
 .metadata
 *.iml
 .idea/
-/assets/fonts/*.ttf
