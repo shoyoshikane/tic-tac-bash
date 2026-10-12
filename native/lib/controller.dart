@@ -291,7 +291,7 @@ class GameController extends ChangeNotifier {
     if (state.result != null)
       return state.result == 0 ? 'もう一局、どうぞ。' : '3つ、揃いました。';
     if (!canInteract) return online ? '相手の手を待っています' : '考えています…';
-    return '空きマスをタップ · コマをドラッグ';
+    return 'タップで置く・ドラッグで弾く';
   }
 
   @override
