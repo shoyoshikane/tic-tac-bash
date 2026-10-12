@@ -294,7 +294,7 @@ void main() {
     expect(game.state.moves, 2);
   });
   testWidgets(
-    'spectators have a red screen, a persistent badge, and no game actions',
+    'spectators use the normal palette, keep their badge, and cannot play',
     (tester) async {
       final hub = FakeHub(),
           host = GameController(peerFactory: () => hub.create()),
@@ -315,7 +315,16 @@ void main() {
       expect(find.text('観戦モード'), findsOneWidget);
       expect(find.text('もう一局'), findsNothing);
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-      expect(scaffold.backgroundColor, const Color(0xfff01832));
+      expect(scaffold.backgroundColor, const Color(0xffeff0ed));
+      final badge = tester.widget<Container>(
+        find.byKey(const Key('spectator-badge')),
+      );
+      expect(
+        (badge.decoration as BoxDecoration).color,
+        const Color(0xffd6e0d7),
+      );
+      final cell = tester.widget<Container>(find.byKey(const Key('cell-12')));
+      expect((cell.decoration as BoxDecoration).color, const Color(0xffe8ece5));
       await tester.tap(find.byKey(const Key('cell-12')));
       await tester.pump();
       expect(host.state.moves, 0);

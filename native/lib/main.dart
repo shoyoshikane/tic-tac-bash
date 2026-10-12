@@ -268,12 +268,10 @@ class _GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: game,
     builder: (context, _) {
-      final watching = game.spectator,
-          ink = watching ? Colors.white : const Color(0xff262a29);
+      final watching = game.spectator;
+      const ink = Color(0xff262a29);
       return Scaffold(
-        backgroundColor: watching
-            ? const Color(0xfff01832)
-            : const Color(0xffeff0ed),
+        backgroundColor: const Color(0xffeff0ed),
         body: SafeArea(
           child: SingleChildScrollView(
             child: Center(
@@ -378,23 +376,23 @@ class _GameScreenState extends State<GameScreen> {
                           ),
                           margin: const EdgeInsets.only(bottom: 22),
                           decoration: BoxDecoration(
-                            color: const Color(0xff9e001d),
+                            color: const Color(0xffd6e0d7),
                             borderRadius: BorderRadius.circular(28),
-                            border: Border.all(color: Colors.white54),
+                            border: Border.all(color: const Color(0xffa5ada4)),
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.visibility_outlined,
-                                color: Colors.white,
+                                color: Color(0xff262a29),
                                 size: 18,
                               ),
                               SizedBox(width: 8),
                               Text(
                                 '観戦モード',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: Color(0xff262a29),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -485,9 +483,7 @@ class _GameScreenState extends State<GameScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           alignment: WrapAlignment.center,
-                          children: game.reachPlayers
-                              .map((p) => _reach(p, watching))
-                              .toList(),
+                          children: game.reachPlayers.map(_reach).toList(),
                         ),
                         const SizedBox(height: 14),
                       ],
@@ -566,7 +562,7 @@ class _GameScreenState extends State<GameScreen> {
       );
     },
   );
-  Widget _reach(int player, bool watching) {
+  Widget _reach(int player) {
     final label = '${player == 1 ? '先攻' : '後攻'} リーチ';
     return Semantics(
       liveRegion: true,
@@ -576,11 +572,9 @@ class _GameScreenState extends State<GameScreen> {
         key: Key('reach-$player'),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: watching ? const Color(0xff9e001d) : const Color(0xffffe6a7),
+          color: const Color(0xffffe6a7),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: watching ? Colors.white70 : const Color(0xffd1a04e),
-          ),
+          border: Border.all(color: const Color(0xffd1a04e)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -592,7 +586,7 @@ class _GameScreenState extends State<GameScreen> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: watching ? Colors.white : const Color(0xff775116),
+                color: const Color(0xff775116),
               ),
             ),
           ],
@@ -604,11 +598,7 @@ class _GameScreenState extends State<GameScreen> {
   Widget _mode(String title, bool active, Color ink, VoidCallback action) =>
       TextButton(
         style: TextButton.styleFrom(
-          foregroundColor: active
-              ? game.spectator
-                    ? const Color(0xffb50020)
-                    : Colors.white
-              : ink,
+          foregroundColor: active ? Colors.white : ink,
           backgroundColor: active ? ink : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         ),
@@ -664,11 +654,7 @@ class _GameScreenState extends State<GameScreen> {
           ? const Color(0xff171717)
           : Colors.white,
       border: Border.all(
-        color: p == 1
-            ? const Color(0xff171717)
-            : game.spectator
-            ? Colors.white60
-            : const Color(0xffa5ada4),
+        color: p == 1 ? const Color(0xff171717) : const Color(0xffa5ada4),
       ),
     ),
   );
@@ -1033,7 +1019,7 @@ class _GameBoardState extends State<GameBoard>
 
   @override
   Widget build(BuildContext context) {
-    final game = widget.game, red = game.spectator;
+    final game = widget.game;
     final turn = game.lastTurn;
     final animating = turn != null && _motion.isAnimating;
     List<int> b = _ghost?.board ?? game.state.board;
@@ -1055,15 +1041,11 @@ class _GameBoardState extends State<GameBoard>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: red ? const Color(0xffcb0924) : const Color(0xfffafbf7),
+        color: const Color(0xfffafbf7),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: game.reachPlayers.isNotEmpty
-              ? red
-                    ? Colors.white70
-                    : const Color(0xffd1a04e)
-              : red
-              ? const Color(0xffff8594)
+              ? const Color(0xffd1a04e)
               : Colors.white,
           width: game.reachPlayers.isNotEmpty ? 2 : 1,
         ),
@@ -1132,19 +1114,13 @@ class _GameBoardState extends State<GameBoard>
                               decoration: BoxDecoration(
                                 color: winning.contains(i)
                                     ? const Color(0xffdbd6a8)
-                                    : red
-                                    ? Colors.white.withValues(
-                                        alpha: changed ? .2 : .09,
-                                      )
                                     : changed
                                     ? const Color(0xffd6e0d7)
                                     : const Color(0xffe8ece5),
                                 borderRadius: BorderRadius.circular(7),
                                 border: _selected == i
                                     ? Border.all(
-                                        color: red
-                                            ? Colors.white70
-                                            : const Color(0xff7d9284),
+                                        color: const Color(0xff7d9284),
                                         width: 1.5,
                                       )
                                     : null,
@@ -1221,7 +1197,6 @@ class _GameBoardState extends State<GameBoard>
                               _selected!,
                               _aim!,
                               _ghost != null,
-                              red,
                             ),
                           ),
                         ),
@@ -1267,10 +1242,10 @@ class _Stone extends StatelessWidget {
 }
 
 class _AimPainter extends CustomPainter {
-  _AimPainter(this.i, this.direction, this.valid, this.red);
+  _AimPainter(this.i, this.direction, this.valid);
   final int i;
   final (int, int) direction;
-  final bool valid, red;
+  final bool valid;
   @override
   void paint(Canvas canvas, Size size) {
     final start = Offset(
@@ -1281,11 +1256,7 @@ class _AimPainter extends CustomPainter {
         length = size.width * .16;
     final end = start + Offset(math.cos(angle), math.sin(angle)) * length;
     final pen = Paint()
-      ..color = valid
-          ? red
-                ? Colors.white
-                : const Color(0xff4c6756)
-          : const Color(0xff9b7164)
+      ..color = valid ? const Color(0xff4c6756) : const Color(0xff9b7164)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(start, end, pen);
@@ -1302,8 +1273,5 @@ class _AimPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AimPainter old) =>
-      old.i != i ||
-      old.direction != direction ||
-      old.valid != valid ||
-      old.red != red;
+      old.i != i || old.direction != direction || old.valid != valid;
 }
