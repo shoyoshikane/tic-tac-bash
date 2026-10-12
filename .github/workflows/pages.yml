@@ -42,12 +42,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-        env:
-          RUN_CLOUD_SMOKE: '1'
-      - run: npx playwright test --config native/test_browser/playwright.config.js
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

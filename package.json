@@ -3,15 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test engine.test.js protocol.test.js connection.test.js network.test.js ui-events.test.js",
-    "start": "python3 -m http.server 4173 --directory dist",
-    "test:browser": "playwright test",
-    "test:ui": "playwright test --config playwright.ui.config.js"
+    "test": "cd native && flutter test",
+    "start": "cd native && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 4281 --disable-dds",
+    "test:browser": "playwright test --config native/test_browser/playwright.config.js"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
-    "jsdom": "26.1.0",
-    "peer": "1.0.2",
-    "peerjs": "1.5.5"
+    "peer": "1.0.2"
   }
 }

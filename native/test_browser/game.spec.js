@@ -126,39 +126,3 @@ test('Flutter peers synchronize drags, full-room spectators, reload, rematch and
     expect((await read(guest)).spectator).toBe(false);
   } finally { await Promise.all(contexts.map(c => c.close())); }
 });
-
-for (const flutterHost of [true, false]) {
-  test(`Flutter interoperates with the previous Web version as ${flutterHost ? 'host' : 'guest'}`, async ({browser}) => {
-    const a = await browser.newContext(), b = await browser.newContext();
-    const flutter = await a.newPage(), legacy = await b.newPage();
-    try {
-      await legacy.addInitScript(() => { window.__PEER_OPTIONS__ = {host: '127.0.0.1', port: 9000, path: '/peerjs', secure: false, config: {iceServers: []}}; });
-      let target;
-      if (flutterHost) {
-        target = await hostRoom(flutter);
-        await chooseSecond(flutter);
-        await legacy.goto('http://127.0.0.1:4173/#room=' + target);
-      } else {
-        await legacy.goto('http://127.0.0.1:4173/'); await legacy.locator('#online').click();
-        await expect(legacy.locator('#invite-link')).not.toHaveValue('');
-        target = new URLSearchParams(new URL(await legacy.locator('#invite-link').inputValue()).hash.slice(1)).get('room');
-        await load(flutter, '#room=' + target);
-      }
-      await expect.poll(async () => (await read(flutter)).ready).toBe(true);
-      await expect(legacy.locator('#room-status')).toContainText('接続しました');
-      if (flutterHost) {
-        await legacy.locator('[data-cell="0"]').click();
-        await expect.poll(async () => (await read(flutter)).canMove).toBe(true);
-        await move(flutter, {type: 'place', i: 2});
-        await expect(legacy.locator('[data-cell="2"] .p2')).toHaveCount(1);
-      } else {
-        await legacy.locator('[data-cell="0"]').click();
-        await expect.poll(async () => (await read(flutter)).moves).toBe(1);
-        await expect.poll(async () => (await read(flutter)).canMove).toBe(true);
-        await move(flutter, {type: 'place', i: 2});
-      }
-      await expect.poll(async () => (await read(flutter)).moves).toBe(2);
-      await expect(legacy.locator('.board .stone')).toHaveCount(2);
-    } finally { await a.close(); await b.close(); }
-  });
-}

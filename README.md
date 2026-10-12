@@ -17,9 +17,7 @@
 
 観戦する友達にも同じ招待リンクを送れます。盤面の上の「観戦モード」表示で、観戦中であることを確認できます。複数人が同時に観戦でき、途中参加でも現在の盤面から表示します。駒の配置・連鎖・勝敗・再戦を同期し、観戦者は駒を操作したり再戦を提案したりできません。対戦相手が切断したら接続待ちを表示します。観戦者の再読み込みや「再接続」では、同じ部屋の現在の盤面を取得できます。作成者が部屋を閉じた場合は観戦も終了します。
 
-通信にはPeerJS互換の接続処理と無料のPeerJS Cloud接続仲介サービスを使用し、盤面はWebRTCデータチャネルで共有します。FlutterのWeb版・ネイティブ版と旧Web版で同じ対戦プロトコルを使用します。サードパーティの仲介サービスとSTUNサーバーへの接続が発生します。サービス障害や一部の企業ネットワーク・NAT環境では接続できないことがあります。この版では専用TURNサーバーを用意していないため、接続できないときはモバイル回線など別の回線をお試しください。
-
-PeerJS: https://peerjs.com/client/faq （MITライセンス。`dist/vendor/peerjs-LICENSE`参照）
+通信にはPeerJS互換の接続処理と無料のPeerJS Cloud接続仲介サービスを使用し、盤面はWebRTCデータチャネルで共有します。Web版・ネイティブ版で同じ対戦プロトコルを使用します。サードパーティの仲介サービスとSTUNサーバーへの接続が発生します。サービス障害や一部の企業ネットワーク・NAT環境では接続できないことがあります。この版では専用TURNサーバーを用意していないため、接続できないときはモバイル回線など別の回線をお試しください。
 
 ## 開発環境と起動
 
@@ -64,7 +62,7 @@ flutter test
 flutter build web --no-web-resources-cdn --base-href /tic-tac-bash/
 ```
 
-旧JavaScript版の244局面とDart版の打てる手・盤面・勝敗を比較し、配置、連鎖、反転禁止、CPU、対戦同期、満員時の観戦、再戦、再接続、ドラッグUIを検証します。
+保存済みの244局面を使い、打てる手・盤面・勝敗を比較します。配置、連鎖、反転禁止、CPU、対戦同期、満員時の観戦、再戦、再接続、ドラッグUIも検証します。
 
 実際のブラウザ・WebRTCを使うテスト:
 
@@ -74,14 +72,14 @@ flutter build web --no-web-resources-cdn --target test_browser/main.dart --outpu
 cd ..
 npm ci
 npx playwright install chromium
-npx playwright test --config native/test_browser/playwright.config.js
+npm run test:browser
 ```
 
-テスト用ビルドだけが状態確認用のブリッジとローカル接続サーバーを使います。公開用 `lib/main.dart` のビルドには含めません。旧版のソース `dist/` とそのテストは移行時のルール・通信互換性の確認用として残しています。
+テスト用ビルドだけが状態確認用のブリッジとローカル接続サーバーを使います。公開用 `lib/main.dart` のビルドには含めません。ブラウザテストと接続サーバーは `native/test_browser/` にまとめています。`npm test` でもFlutterのテストを実行できます。
 
 ## ビルドと公開
 
-`.github/workflows/pages.yml` は `main` へのpushでFlutter解析・テスト・Webビルド、旧版の検証、Flutterのブラウザテストを実行し、成功後に `native/build/web/` をGitHub Pagesへ公開します。CanvasKitは同じサイトから配信します。
+`.github/workflows/pages.yml` は `main` へのpushでFlutter解析・テスト・Webビルド、ブラウザテストを実行し、成功後に `native/build/web/` をGitHub Pagesへ公開します。CanvasKitは同じサイトから配信します。
 
 公開用ビルドのパスと招待URLはGitHub Pagesの設定から取得するため、リポジトリ名や独自ドメインの変更にも追従します。手動ビルドでは `--dart-define WEB_GAME_URL=公開URL` で招待URLを指定できます。
 

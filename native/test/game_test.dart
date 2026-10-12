@@ -40,7 +40,7 @@ void main() {
     },
   );
   test(
-    'Dart matches the Web engine state and legal moves throughout recorded games',
+    'Dart matches expected states and playable moves from recorded games',
     () {
       final corpus =
           jsonDecode(File('test/fixtures/web-games.json').readAsStringSync())
