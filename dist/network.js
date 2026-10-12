@@ -75,7 +75,7 @@ export class Room {
     this.armTimeout('つながりませんでした。作成者の画面と回線を確認して再接続してください。');
     this.attach(this.peer.connect(this.target,{reliable:true,serialization:'json',metadata:{version:VERSION,token:this.identity,watch:this.spectator}}));
   }
-  snapshot(){return {type:'state',version:VERSION,match:this.match,rev:this.state.moves,log:this.state.log,votes:[this.localVote,this.remoteVote],playing:this.ready};}
+  snapshot(){return {type:'state',version:VERSION,match:this.match,rev:this.state.moves,log:this.state.log,votes:[this.localVote,this.remoteVote],playing:this.ready,hostRole:this.host?this.role:3-this.role};}
   attachWatcher(conn){
     const entry={lastSeen:Date.now(),heartbeat:null};this.watchers.set(conn,entry);
     const remove=()=>{clearInterval(entry.heartbeat);this.watchers.delete(conn);};
@@ -129,14 +129,16 @@ export class Room {
     if(this.host){
       if(message.type==='sync'){this.sendSnapshot();return;}
       if(message.type==='move'&&this.ready){
-        const out=acceptMove(this.state,message,2,this.match);
+        const out=acceptMove(this.state,message,3-this.role,this.match);
         if(out){this.state=out.state;this.localVote=false;this.remoteVote=false;this.sendSnapshot();this.onState(this.state,out.steps);}
         else this.sendSnapshot();
       }else if(message.type==='rematch'&&this.ready&&message.match===this.match){this.remoteVote=true;this.maybeRematch();}
     }else if(message.type==='state'&&typeof message.match==='string'&&message.match.length<100&&Number.isInteger(message.rev)){
       if(message.match===this.match&&message.rev<this.rev)return;
       const state=restore(message.log);if(!state||state.moves!==message.rev)return;
+      const hostRole=message.hostRole??1;if(hostRole!==1&&hostRole!==2)return;
       if(message.spectator===true){this.spectator=true;this.role=0;}
+      if(!this.spectator)this.role=3-hostRole;
       let steps=[];
       if(this.match===message.match&&state.moves===this.state.moves+1)steps=play(this.state,state.log.at(-1))?.steps??[];
       this.match=message.match;this.rev=message.rev;this.state=state;this.ready=true;this.pending=false;clearTimeout(this.timeout);
@@ -148,7 +150,7 @@ export class Room {
   move(action){
     if(!this.canMove)return false;
     const message={type:'move',action,match:this.match,rev:this.state.moves,version:VERSION};
-    if(this.host){const out=acceptMove(this.state,message,1,this.match);if(!out)return false;
+    if(this.host){const out=acceptMove(this.state,message,this.role,this.match);if(!out)return false;
       this.state=out.state;this.localVote=false;this.remoteVote=false;this.sendSnapshot();this.onState(this.state,out.steps);
     }else{if(!play(this.state,action))return false;this.pending=true;if(!this.send(message))return false;this.status('手を送信しています…');}
     return true;

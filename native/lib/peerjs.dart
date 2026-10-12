@@ -24,7 +24,8 @@ class NativePeer implements RoomPeer {
   final int port;
   final bool secure;
   final List<Map<String, dynamic>> iceServers;
-  final String id = const Uuid().v4(), token = const Uuid().v4();
+  String id = const Uuid().v4();
+  final String token = const Uuid().v4();
   WebSocketChannel? _socket;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeat, _reconnect;
@@ -38,10 +39,12 @@ class NativePeer implements RoomPeer {
 
   @override
   Future<void> start({
+    String? peerId,
     required void Function(String) onOpen,
     required void Function(RoomConnection) onConnection,
     required void Function(String) onError,
   }) async {
+    if (peerId != null) id = peerId;
     _onOpen = onOpen;
     _onConnection = onConnection;
     _onError = onError;
@@ -144,7 +147,9 @@ class NativePeer implements RoomPeer {
       'EXPIRE',
     ].contains(message['type'])) {
       _onError(
-        message['type'] == 'EXPIRE'
+        message['type'] == 'ID-TAKEN'
+            ? peerIdTaken
+            : message['type'] == 'EXPIRE'
             ? '部屋が見つかりません。作成者の画面を確認してください。'
             : '接続サービスに接続できませんでした。',
       );

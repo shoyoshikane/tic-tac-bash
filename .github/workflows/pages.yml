@@ -28,7 +28,12 @@ jobs:
         working-directory: native
       - run: flutter test
         working-directory: native
-      - run: flutter build web --no-web-resources-cdn --base-href /high-tension-tic-tac-toe/
+      - uses: actions/configure-pages@v5
+        id: pages
+      - run: flutter build web --no-web-resources-cdn --base-href "$PAGES_BASE_PATH/" --dart-define "WEB_GAME_URL=$PAGES_BASE_URL/"
+        env:
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
         working-directory: native
       - run: flutter build web --no-web-resources-cdn --target test_browser/main.dart --output build/browser-test
         working-directory: native
@@ -50,7 +55,6 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: native/build/web

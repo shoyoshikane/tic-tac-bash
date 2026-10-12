@@ -66,6 +66,16 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   GameController get game => widget.game;
   StreamSubscription<Uri>? _links;
+
+  void _showHistory() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => GameHistory(entries: game.moveHistory),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -134,8 +144,8 @@ class _GameScreenState extends State<GameScreen> {
             TextField(
               controller: input,
               decoration: InputDecoration(
-                labelText: '招待リンク',
-                hintText: '友達から届いたリンクを貼り付け',
+                labelText: '部屋コード / 招待リンク',
+                hintText: '6桁の英数字、または招待リンク',
                 suffixIcon: IconButton(
                   tooltip: '貼り付け',
                   icon: const Icon(Icons.content_paste),
@@ -151,7 +161,7 @@ class _GameScreenState extends State<GameScreen> {
               onPressed: () {
                 if (parseInvitation(input.text) == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('招待リンクを確認してください')),
+                    const SnackBar(content: Text('部屋コード・招待リンクを確認してください')),
                   );
                   return;
                 }
@@ -169,6 +179,38 @@ class _GameScreenState extends State<GameScreen> {
       await game.startOnline(
         invitation: result.isEmpty ? null : parseInvitation(result),
       );
+  }
+
+  Future<void> _chooseRole(int role) async {
+    if (game.online) {
+      game.room?.chooseRole(role);
+    } else if (role != game.cpuRole && await _confirmLeave()) {
+      await game.startCpu(role: role);
+    }
+  }
+
+  Future<void> _showRolePicker() async {
+    final selected = game.localRole;
+    final role = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('手番を選択'),
+        children: [
+          for (final player in [1, 2])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, player),
+              child: Row(
+                children: [
+                  Icon(selected == player ? Icons.check : null, size: 20),
+                  const SizedBox(width: 12),
+                  Text(player == 1 ? '先攻' : '後攻'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (role != null && mounted) await _chooseRole(role);
   }
 
   Future<void> _share(BuildContext context) async {
@@ -201,7 +243,11 @@ class _GameScreenState extends State<GameScreen> {
       title: const Text('遊び方'),
       content: const SingleChildScrollView(
         child: Text(
-          '先攻は黒、後攻は白。縦・横・斜めに3つ連続で並べると勝ち。コマは各5個です。\n\n空きマスをタップして置きます。自分のコマの周囲8マスには置けません。\n\n自分のコマを8方向へドラッグして弾きます。移動後の盤面をプレビューし、盤の上で離すと確定。盤の外や元の位置で離すとキャンセルです。衝突したコマに移動が連鎖します。\n\n直前の手番開始時の配置に戻す手は選べません。両者同時に揃った場合と合法手がない場合は引き分けです。\n\nオンラインは招待リンクで参加します。満員なら自動で観戦モードになります。「もう一局」は両者の同意で開始します。',
+          '・黒が先攻、白が後攻。自分のコマを縦・横・斜めに3つ揃えると勝ち。\n\n'
+          '・自分の番に「置く」か「弾く」を1回。コマは各5個までで、自分のコマの周囲8マスには置けません。\n\n'
+          '・自分のコマを8方向にドラッグ。ぶつかった黒・白のコマも同じ方向に動きます。盤の上で離すと確定、盤の外で離すとキャンセル。\n\n'
+          '・盤面が変わらない手と、相手が動かす前の盤面に戻す手は打てません。\n\n'
+          '・黒と白が同時に揃うか、次の人に打てる手がなくなると引き分け。',
         ),
       ),
       actions: [
@@ -238,8 +284,24 @@ class _GameScreenState extends State<GameScreen> {
                   child: Column(
                     children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Icon(Icons.more_horiz, color: ink),
+                          ExcludeSemantics(
+                            child: SizedBox(
+                              width: 40,
+                              height: 24,
+                              child: Stack(
+                                children: [
+                                  for (var i = 0; i < 3; i++)
+                                    Positioned(
+                                      left: i * 14.0,
+                                      top: i == 2 ? 4 : 10,
+                                      child: _miniStone(i == 2 ? 2 : 1, 11),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -265,18 +327,48 @@ class _GameScreenState extends State<GameScreen> {
                           border: Border.all(color: ink.withValues(alpha: .15)),
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _mode('CPU対戦', !game.online, ink, () async {
-                              if (!game.online) return;
-                              if (await _confirmLeave()) await game.startCpu();
-                            }),
-                            _mode('オンライン対戦', game.online, ink, _online),
-                          ],
+                        child: IntrinsicWidth(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _mode(
+                                  'CPU対戦',
+                                  !game.online,
+                                  ink,
+                                  () async {
+                                    if (!game.online) return;
+                                    if (await _confirmLeave())
+                                      await game.startCpu();
+                                  },
+                                ),
+                              ),
+                              Expanded(
+                                child: _mode(
+                                  'オンライン対戦',
+                                  game.online,
+                                  ink,
+                                  _online,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 26),
+                      if (!game.online || game.room?.host == true) ...[
+                        OutlinedButton.icon(
+                          key: const Key('role-selector'),
+                          icon: const Icon(Icons.expand_more, size: 18),
+                          label: Text(
+                            '${game.online && game.state.result != null ? '次の手番' : '手番'}：${game.localRole == 2 ? '後攻' : '先攻'}',
+                          ),
+                          onPressed:
+                              !game.online || game.room?.canChooseRole == true
+                              ? _showRolePicker
+                              : null,
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                       if (watching)
                         Container(
                           key: const Key('spectator-badge'),
@@ -314,6 +406,42 @@ class _GameScreenState extends State<GameScreen> {
                               game.room!.invite.isNotEmpty ||
                               game.room!.localVote ||
                               game.room!.remoteVote)) ...[
+                        if (game.room?.roomCode.isNotEmpty == true)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('部屋コード '),
+                              Semantics(
+                                label: game.room!.roomCode,
+                                excludeSemantics: true,
+                                child: SelectableText(
+                                  game.room!.roomCode,
+                                  key: const Key('room-code'),
+                                  style: TextStyle(
+                                    color: ink,
+                                    fontSize: 20,
+                                    letterSpacing: 3,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '部屋コードをコピー',
+                                icon: Icon(Icons.copy, size: 18, color: ink),
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: game.room!.roomCode),
+                                  );
+                                  if (context.mounted)
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('部屋コードをコピーしました'),
+                                      ),
+                                    );
+                                },
+                              ),
+                            ],
+                          ),
                         if (game.room?.ready != true ||
                             game.room!.localVote ||
                             game.room!.remoteVote)
@@ -398,6 +526,11 @@ class _GameScreenState extends State<GameScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          IconButton(
+                            tooltip: '履歴',
+                            onPressed: _showHistory,
+                            icon: const Icon(Icons.history),
+                          ),
                           if (!game.online)
                             IconButton(
                               tooltip: '一手戻す',
@@ -490,7 +623,7 @@ class _GameScreenState extends State<GameScreen> {
               : game.room?.role == p
               ? 'あなた'
               : '相手'
-        : p == 1
+        : p == game.cpuRole
         ? 'あなた'
         : 'CPU';
     return Opacity(
@@ -541,6 +674,198 @@ class _GameScreenState extends State<GameScreen> {
   );
 }
 
+class GameHistory extends StatefulWidget {
+  const GameHistory({super.key, required this.entries});
+  final List<TurnPresentation> entries;
+
+  @override
+  State<GameHistory> createState() => _GameHistoryState();
+}
+
+class _GameHistoryState extends State<GameHistory> {
+  final _replay = GameController(readOnly: true);
+  late int _index;
+  final _timeline = ScrollController();
+
+  GameState _position(int index) =>
+      index == 0 ? GameState() : widget.entries[index - 1].after;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.entries.length;
+    _replay.state = _position(_index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _index > 0) _select(_index);
+    });
+  }
+
+  @override
+  void dispose() {
+    _replay.dispose();
+    _timeline.dispose();
+    super.dispose();
+  }
+
+  void _select(int index) {
+    final turn = index == 0 ? null : widget.entries[index - 1];
+    setState(() => _index = index);
+    _replay.state = _position(index);
+    _replay.lastTurn = turn != null
+        ? TurnPresentation(turn.before, turn.after, turn.move, turn.steps)
+        : null;
+    _replay.presenting = turn != null;
+    _replay.changed();
+    if (_timeline.hasClients) {
+      final offset =
+          ((index - 1) * 76.0 - _timeline.position.viewportDimension / 2 + 38)
+              .clamp(0.0, _timeline.position.maxScrollExtent);
+      _timeline.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: SizedBox(
+      key: const Key('visual-history'),
+      height: MediaQuery.sizeOf(context).height * .85,
+      child: Column(
+        children: [
+          const Text(
+            '履歴',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$_index / ${widget.entries.length} 手',
+            key: const Key('history-position'),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: GameBoard(
+                    key: const Key('history-board'),
+                    game: _replay,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                tooltip: '最初へ',
+                onPressed: _index > 1 ? () => _select(1) : null,
+                icon: const Icon(Icons.first_page),
+              ),
+              IconButton(
+                tooltip: '前の手',
+                onPressed: _index > 1 ? () => _select(_index - 1) : null,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              IconButton(
+                tooltip: '次の手',
+                onPressed: _index < widget.entries.length
+                    ? () => _select(_index + 1)
+                    : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+              IconButton(
+                tooltip: '最新へ',
+                onPressed: _index < widget.entries.length
+                    ? () => _select(widget.entries.length)
+                    : null,
+                icon: const Icon(Icons.last_page),
+              ),
+            ],
+          ),
+          SizedBox(
+            height: 90,
+            child: ListView.builder(
+              controller: _timeline,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: widget.entries.length,
+              itemBuilder: (context, item) {
+                final index = item + 1;
+                return Semantics(
+                  selected: index == _index,
+                  child: TextButton(
+                    key: Key('history-step-$index'),
+                    onPressed: () => _select(index),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.all(6),
+                      backgroundColor: index == _index
+                          ? const Color(0xffd6e0d7)
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: SizedBox(
+                      width: 64,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: _HistoryThumbnail(
+                              board: _position(index).board,
+                            ),
+                          ),
+                          Text('$index', style: const TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('閉じる'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _HistoryThumbnail extends StatelessWidget {
+  const _HistoryThumbnail({required this.board});
+  final List<int> board;
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: AspectRatio(
+      aspectRatio: 1,
+      child: GridView.count(
+        crossAxisCount: 5,
+        padding: EdgeInsets.zero,
+        mainAxisSpacing: 1,
+        crossAxisSpacing: 1,
+        physics: const NeverScrollableScrollPhysics(),
+        children: board
+            .map(
+              (player) => Container(
+                color: const Color(0xffe8ece5),
+                padding: const EdgeInsets.all(1),
+                child: player == 0 ? null : _Stone(player: player),
+              ),
+            )
+            .toList(),
+      ),
+    ),
+  );
+}
+
 class GameBoard extends StatefulWidget {
   const GameBoard({super.key, required this.game});
   final GameController game;
@@ -548,7 +873,10 @@ class GameBoard extends StatefulWidget {
   State<GameBoard> createState() => _GameBoardState();
 }
 
-class _GameBoardState extends State<GameBoard> {
+class _GameBoardState extends State<GameBoard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _motion;
+  TurnPresentation? _shownTurn;
   int? _selected;
   Offset? _origin, _last;
   Preview? _ghost;
@@ -558,16 +886,34 @@ class _GameBoardState extends State<GameBoard> {
   @override
   void initState() {
     super.initState();
+    _motion = AnimationController(vsync: this)
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
     widget.game.addListener(_cancel);
   }
 
   @override
   void dispose() {
     widget.game.removeListener(_cancel);
+    _motion.dispose();
     super.dispose();
   }
 
   void _cancel() {
+    final turn = widget.game.lastTurn;
+    if (!identical(turn, _shownTurn)) {
+      _shownTurn = turn;
+      _motion.stop();
+      if (turn != null &&
+          widget.game.presenting &&
+          !MediaQuery.disableAnimationsOf(context)) {
+        _motion.duration = turn.duration;
+        _motion.forward(from: 0);
+      } else {
+        _motion.value = 1;
+      }
+    }
     if (mounted)
       setState(() {
         _selected = null;
@@ -687,10 +1033,23 @@ class _GameBoardState extends State<GameBoard> {
 
   @override
   Widget build(BuildContext context) {
-    final game = widget.game,
-        red = game.spectator,
-        b = _ghost?.board ?? game.state.board;
-    final winning = game.state.result != null
+    final game = widget.game, red = game.spectator;
+    final turn = game.lastTurn;
+    final animating = turn != null && _motion.isAnimating;
+    List<int> b = _ghost?.board ?? game.state.board;
+    Slide? active;
+    double progress = 1;
+    int movingPlayer = 0;
+    if (animating && turn.steps.isNotEmpty) {
+      final phase = _motion.value * turn.steps.length;
+      final index = math.min(phase.floor(), turn.steps.length - 1);
+      active = turn.steps[index];
+      progress = Curves.easeInOut.transform(phase - index);
+      b = List.of(index == 0 ? turn.before.board : turn.steps[index - 1].board);
+      movingPlayer = b[active.from];
+      b[active.from] = 0;
+    }
+    final winning = game.state.result != null && !animating
         ? lines(game.state.board).expand((c) => c).toSet()
         : <int>{};
     return Container(
@@ -798,7 +1157,18 @@ class _GameBoardState extends State<GameBoard> {
                                           aspectRatio: 1,
                                           child: Opacity(
                                             opacity: changed ? .65 : 1,
-                                            child: _Stone(player: b[i]),
+                                            child:
+                                                animating &&
+                                                    turn.move.type == 'place' &&
+                                                    i == turn.move.i
+                                                ? Transform.scale(
+                                                    scale: Curves.easeOutBack
+                                                        .transform(
+                                                          _motion.value,
+                                                        ),
+                                                    child: _Stone(player: b[i]),
+                                                  )
+                                                : _Stone(player: b[i]),
                                           ),
                                         ),
                                       )
@@ -818,6 +1188,31 @@ class _GameBoardState extends State<GameBoard> {
                           );
                         }),
                       ),
+                      if (active != null)
+                        Positioned(
+                          left:
+                              (active.from % 5 +
+                                      (active.to % 5 - active.from % 5) *
+                                          progress) *
+                                  ((_size - 12) / 5 + 3) +
+                              ((_size - 12) / 5) * .18,
+                          top:
+                              (active.from ~/ 5 +
+                                      (active.to ~/ 5 - active.from ~/ 5) *
+                                          progress) *
+                                  ((_size - 12) / 5 + 3) +
+                              ((_size - 12) / 5) * .18,
+                          width: ((_size - 12) / 5) * .64,
+                          height: ((_size - 12) / 5) * .64,
+                          child: IgnorePointer(
+                            child: ExcludeSemantics(
+                              child: _Stone(
+                                key: const Key('moving-stone'),
+                                player: movingPlayer,
+                              ),
+                            ),
+                          ),
+                        ),
                       if (_aim != null && _selected != null)
                         IgnorePointer(
                           child: CustomPaint(
@@ -843,7 +1238,7 @@ class _GameBoardState extends State<GameBoard> {
 }
 
 class _Stone extends StatelessWidget {
-  const _Stone({required this.player});
+  const _Stone({super.key, required this.player});
   final int player;
   @override
   Widget build(BuildContext context) => DecoratedBox(

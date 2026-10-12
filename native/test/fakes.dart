@@ -11,15 +11,21 @@ class FakeHub {
 class FakePeer implements RoomPeer {
   FakePeer(this.hub, this.id);
   final FakeHub hub;
-  final String id;
+  String id;
   final List<FakeConnection> connections = [];
   late void Function(RoomConnection) onConnection;
   @override
   Future<void> start({
+    String? peerId,
     required void Function(String) onOpen,
     required void Function(RoomConnection) onConnection,
     required void Function(String) onError,
   }) async {
+    if (peerId != null) id = peerId;
+    if (hub.peers.containsKey(id)) {
+      onError(peerIdTaken);
+      return;
+    }
     this.onConnection = onConnection;
     hub.peers[id] = this;
     onOpen(id);
@@ -47,7 +53,7 @@ class FakePeer implements RoomPeer {
 
   @override
   Future<void> dispose() async {
-    hub.peers.remove(id);
+    if (identical(hub.peers[id], this)) hub.peers.remove(id);
     for (final conn in List<FakeConnection>.of(connections)) {
       await conn.close();
     }

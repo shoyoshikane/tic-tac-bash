@@ -16,6 +16,67 @@ async function hostRoom(page) {
   return new URLSearchParams(new URL((await read(page)).invite).hash.slice(1)).get('room');
 }
 const cell = (page, label) => page.getByRole('button', {name: label, exact: true});
+async function chooseSecond(page) {
+  await page.getByRole('button', {name: '手番：先攻', exact: true}).click();
+  await page.getByRole('dialog').getByText('後攻', {exact: true}).click();
+}
+
+test('CPU first is selected through the UI and survives reload', async ({page}) => {
+  await load(page);
+  await chooseSecond(page);
+  await expect.poll(async () => (await read(page)).role).toBe(2);
+  await expect.poll(async () => (await read(page)).moves).toBe(1);
+  await expect.poll(async () => (await read(page)).canMove).toBe(true);
+  await page.reload(); await page.waitForFunction(() => window.gameTest);
+  await expect.poll(async () => (await read(page)).role).toBe(2);
+  expect((await read(page)).moves).toBe(1);
+});
+
+test('host chooses guest-first order and spectators follow it', async ({browser}) => {
+  const contexts = await Promise.all([0, 1, 2].map(() => browser.newContext()));
+  const [host, guest, viewer] = await Promise.all(contexts.map(c => c.newPage()));
+  try {
+    const target = await hostRoom(host);
+    await chooseSecond(host);
+    await load(guest, '#room=' + target); await linked(host, guest);
+    await expect.poll(async () => (await read(guest)).role).toBe(1);
+    expect((await read(host)).role).toBe(2);
+    await expect(guest.getByRole('button', {name: /^手番：/})).toHaveCount(0);
+    await load(viewer, '#room=' + target);
+    await expect.poll(async () => (await read(viewer)).hostRole).toBe(2);
+    await cell(guest, 'A1 空きマス').click();
+    await expect.poll(async () => (await read(host)).canMove).toBe(true);
+    await cell(host, 'C1 空きマス').click();
+    await expect.poll(async () => (await read(viewer)).board[2]).toBe(2);
+    await act(host, 'rematch'); await act(guest, 'rematch');
+    await expect.poll(async () => (await read(guest)).moves).toBe(0);
+    expect((await read(guest)).role).toBe(1);
+  } finally { await Promise.all(contexts.map(c => c.close())); }
+});
+
+test('six-character room codes and invite links join the same room', async ({browser}) => {
+  const contexts = await Promise.all([0, 1, 2].map(() => browser.newContext()));
+  const [host, guest, viewer] = await Promise.all(contexts.map(c => c.newPage()));
+  try {
+    const target = await hostRoom(host);
+    const code = (await read(host)).roomCode;
+    expect(code).toMatch(/^[A-Z2-9]{6}$/);
+    expect(target).toBe(code);
+    await expect(host.getByText(code, {exact:false})).toBeVisible();
+    await expect(host.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', 'favicon.svg');
+    expect((await host.request.get('/favicon.svg')).ok()).toBe(true);
+    await expect(host.getByText('招待リンクを共有 ↗', {exact:true})).toBeVisible();
+    await load(guest);
+    await guest.getByRole('button', {name:'オンライン対戦', exact:true}).click();
+    await guest.getByRole('textbox', {name:'部屋コード / 招待リンク'}).fill(code.toLowerCase());
+    await guest.getByRole('button', {name:'参加する', exact:true}).click();
+    await linked(host, guest);
+    await load(viewer, '#room=' + target);
+    await expect.poll(async () => (await read(viewer)).spectator).toBe(true);
+    await cell(host, 'A1 空きマス').click();
+    for (const page of [guest, viewer]) await expect.poll(async () => (await read(page)).board[0]).toBe(1);
+  } finally { await Promise.all(contexts.map(c => c.close())); }
+});
 
 test('Flutter CPU responds and undo restores the human turn', async ({page}) => {
   await load(page);
@@ -33,8 +94,10 @@ test('Flutter peers synchronize drags, full-room spectators, reload, rematch and
     await load(guest, '#room=' + target); await linked(host, guest);
     await cell(host, 'A1 空きマス').click();
     await expect.poll(async () => (await read(guest)).moves).toBe(1);
+    await expect.poll(async () => (await read(guest)).canMove).toBe(true);
     await cell(guest, 'C1 空きマス').click();
     await expect.poll(async () => (await read(host)).moves).toBe(2);
+    await expect.poll(async () => (await read(host)).canMove).toBe(true);
     await load(viewer, '#room=' + target);
     await expect.poll(async () => (await read(viewer)).spectator).toBe(true);
     await expect(viewer).toHaveURL(/watch=1/);
@@ -73,6 +136,7 @@ for (const flutterHost of [true, false]) {
       let target;
       if (flutterHost) {
         target = await hostRoom(flutter);
+        await chooseSecond(flutter);
         await legacy.goto('http://127.0.0.1:4173/#room=' + target);
       } else {
         await legacy.goto('http://127.0.0.1:4173/'); await legacy.locator('#online').click();
@@ -83,12 +147,14 @@ for (const flutterHost of [true, false]) {
       await expect.poll(async () => (await read(flutter)).ready).toBe(true);
       await expect(legacy.locator('#room-status')).toContainText('接続しました');
       if (flutterHost) {
-        await move(flutter, {type: 'place', i: 0});
-        await expect(legacy.locator('[data-cell="0"] .p1')).toHaveCount(1);
-        await legacy.locator('[data-cell="2"]').click();
+        await legacy.locator('[data-cell="0"]').click();
+        await expect.poll(async () => (await read(flutter)).canMove).toBe(true);
+        await move(flutter, {type: 'place', i: 2});
+        await expect(legacy.locator('[data-cell="2"] .p2')).toHaveCount(1);
       } else {
         await legacy.locator('[data-cell="0"]').click();
         await expect.poll(async () => (await read(flutter)).moves).toBe(1);
+        await expect.poll(async () => (await read(flutter)).canMove).toBe(true);
         await move(flutter, {type: 'place', i: 2});
       }
       await expect.poll(async () => (await read(flutter)).moves).toBe(2);

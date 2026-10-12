@@ -15,25 +15,94 @@ GameState? _cpuReply(GameState state) {
   return move == null ? null : play(state, move)?.state;
 }
 
+class TurnPresentation {
+  TurnPresentation(this.before, this.after, this.move, this.steps);
+  final GameState before, after;
+  final Move move;
+  final List<Slide> steps;
+  Duration get duration => Duration(milliseconds: steps.isEmpty ? 300 : 450);
+}
+
 class GameController extends ChangeNotifier {
-  GameController({RoomPeer Function()? peerFactory})
+  GameController({RoomPeer Function()? peerFactory, this.readOnly = false})
     : peerFactory = peerFactory ?? (() => NativePeer());
+  final bool readOnly;
   final RoomPeer Function() peerFactory;
   GameState state = GameState();
+  int cpuRole = 1;
+  int get localRole => online ? room?.role ?? 0 : cpuRole;
   OnlineRoom? room;
   bool online = false, thinking = false, _disposed = false;
   String roomStatus = '';
   Timer? _cpuTimer;
+  Timer? _presentationTimer;
+  TurnPresentation? lastTurn;
+  bool presenting = false;
+  String? _onlineMatch;
   int _epoch = 0;
   final List<GameState> _undo = [];
   SharedPreferences? _preferences;
   bool get spectator => online && (room?.spectator ?? false);
   bool get canInteract =>
+      !readOnly &&
       !_disposed &&
       state.result == null &&
       !thinking &&
-      (online ? room?.canMove == true : state.turn == 1);
+      !presenting &&
+      (online ? room?.canMove == true : state.turn == cpuRole);
   bool get canUndo => !online && !thinking && _undo.isNotEmpty;
+
+  void _clearPresentation() {
+    _presentationTimer?.cancel();
+    lastTurn = null;
+    presenting = false;
+  }
+
+  void _accept(GameState next, {bool animate = true}) {
+    final before = state;
+    if (next.moves == before.moves &&
+        jsonEncode(next.log.map((m) => m.toJson()).toList()) ==
+            jsonEncode(before.log.map((m) => m.toJson()).toList())) {
+      state = next;
+      return;
+    }
+    _clearPresentation();
+    final contiguous =
+        next.moves == before.moves + 1 &&
+        next.log.length == before.log.length + 1 &&
+        jsonEncode(
+              next.log.take(before.log.length).map((m) => m.toJson()).toList(),
+            ) ==
+            jsonEncode(before.log.map((m) => m.toJson()).toList());
+    if (animate && contiguous) {
+      final move = next.log.last;
+      final out = play(before, move);
+      if (out != null) {
+        lastTurn = TurnPresentation(before, next, move, out.steps);
+        presenting = true;
+        _presentationTimer = Timer(lastTurn!.duration, () {
+          if (_disposed) return;
+          presenting = false;
+          _schedule();
+          changed();
+        });
+      }
+    }
+    state = next;
+  }
+
+  List<TurnPresentation> get moveHistory {
+    var position = GameState();
+    final entries = <TurnPresentation>[];
+    for (final move in state.log) {
+      final out = play(position, move);
+      if (out == null) break;
+      entries.add(TurnPresentation(position, out.state, move, out.steps));
+      position = out.state;
+    }
+    return entries;
+  }
+
   GameState? _reachState;
   List<int> _reachPlayers = const [];
   List<int> get reachPlayers {
@@ -58,6 +127,7 @@ class GameController extends ChangeNotifier {
       _preferences = await SharedPreferences.getInstance();
       final text = _preferences!.getString('high-tension-native-v1');
       final saved = text == null ? null : restore(jsonDecode(text));
+      cpuRole = _preferences!.getInt('high-tension-cpu-role') == 2 ? 2 : 1;
       if (saved != null) state = saved;
     } catch (_) {
       /* Start a new game when saved data cannot be restored. */
@@ -70,6 +140,11 @@ class GameController extends ChangeNotifier {
   void _save() {
     if (!online)
       unawaited(
+        _preferences?.setInt('high-tension-cpu-role', cpuRole) ??
+            Future.value(false),
+      );
+    if (!online)
+      unawaited(
         _preferences?.setString(
               'high-tension-native-v1',
               jsonEncode(state.log.map((m) => m.toJson()).toList()),
@@ -80,7 +155,8 @@ class GameController extends ChangeNotifier {
 
   void _schedule() {
     _cpuTimer?.cancel();
-    if (!online && state.turn == 2 && state.result == null) {
+    if (presenting || readOnly) return;
+    if (!online && state.turn != cpuRole && state.result == null) {
       final epoch = _epoch;
       _cpuTimer = Timer(const Duration(milliseconds: 600), () async {
         if (_disposed || online || epoch != _epoch) return;
@@ -88,7 +164,7 @@ class GameController extends ChangeNotifier {
         changed();
         final next = await compute(_cpuReply, state);
         if (_disposed || epoch != _epoch || online) return;
-        if (next != null) state = next;
+        if (next != null) _accept(next);
         thinking = false;
         _save();
         changed();
@@ -102,7 +178,7 @@ class GameController extends ChangeNotifier {
     final out = play(state, move);
     if (out == null) return false;
     _undo.add(state);
-    state = out.state;
+    _accept(out.state);
     _save();
     _schedule();
     changed();
@@ -113,13 +189,15 @@ class GameController extends ChangeNotifier {
     if (!canUndo) return;
     _epoch++;
     _cpuTimer?.cancel();
+    _clearPresentation();
     state = _undo.removeLast();
     thinking = false;
     _save();
     changed();
   }
 
-  Future<void> startCpu() async {
+  Future<void> startCpu({int? role}) async {
+    _clearPresentation();
     setInvitation('', false);
     _epoch++;
     _cpuTimer?.cancel();
@@ -128,13 +206,17 @@ class GameController extends ChangeNotifier {
     final old = room;
     room = null;
     await old?.close();
+    if (_disposed) return;
+    if (role == 1 || role == 2) cpuRole = role!;
     state = GameState();
     _undo.clear();
     _save();
+    _schedule();
     changed();
   }
 
   Future<void> startOnline({Invitation? invitation}) async {
+    _clearPresentation();
     setInvitation(invitation?.target ?? '', invitation?.spectator ?? false);
     _epoch++;
     _cpuTimer?.cancel();
@@ -151,15 +233,25 @@ class GameController extends ChangeNotifier {
       peerFactory: peerFactory,
       onState: (next, steps) {
         if (_disposed) return;
-        state = next;
+        final match = room?.match;
+        final ownMove =
+            next.moves == state.moves + 1 &&
+            next.log.isNotEmpty &&
+            next.log.last.player == room?.role;
+        final live = match != null && (match == _onlineMatch || ownMove);
+        if (!live) _clearPresentation();
+        _onlineMatch = match;
+        _accept(next, animate: live);
         changed();
       },
       onStatus: (text) {
+        if (room?.ready != true) _onlineMatch = null;
         roomStatus = text;
         changed();
       },
     );
     room = next;
+    _onlineMatch = next.match;
     changed();
     await next.start(
       target: invitation?.target ?? '',
@@ -176,6 +268,7 @@ class GameController extends ChangeNotifier {
   }
 
   String get turnLabel {
+    if (presenting) return '手を表示中';
     if (state.result != null)
       return state.result == 0
           ? '引き分け'
@@ -186,10 +279,11 @@ class GameController extends ChangeNotifier {
         return room!.playing ? '${state.turn == 1 ? '先攻' : '後攻'}の番' : '接続待ち';
       return room!.role == state.turn ? 'あなたの番' : '相手の番';
     }
-    return state.turn == 1 ? 'あなたの番' : 'CPUの番';
+    return state.turn == cpuRole ? 'あなたの番' : 'CPUの番';
   }
 
   String get hint {
+    if (presenting) return '動いたコマを確認しています';
     if (spectator)
       return room?.ready == true && room?.playing == true
           ? '観戦中'
@@ -205,6 +299,7 @@ class GameController extends ChangeNotifier {
     _disposed = true;
     _epoch++;
     _cpuTimer?.cancel();
+    _presentationTimer?.cancel();
     if (room != null) unawaited(room!.close());
     super.dispose();
   }

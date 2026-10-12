@@ -9,6 +9,7 @@ for platform in android ios web; do
 done
 if [ ! -f .metadata ]; then cp "$scaffold/app/.metadata" .metadata; fi
 cp tool/web/index.html web/index.html
+cp tool/web/favicon.svg tool/web/favicon.png web/
 python3 tool/configure_platforms.py
 python3 tool/fonts.py
 flutter pub get

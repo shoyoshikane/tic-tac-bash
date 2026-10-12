@@ -11,6 +11,121 @@ Future<void> settle() async {
 }
 
 void main() {
+  test('room codes accept mixed case and preserve existing invite links', () {
+    expect(parseInvitation(' abC234 '), (target: 'ABC234', spectator: false));
+    expect(parseInvitation('AB23'), (target: 'AB23', spectator: false));
+    expect(
+      parseInvitation('${webGameUrl}#room=ABC234'),
+      parseInvitation('abc234'),
+    );
+    expect(parseInvitation('${webGameUrl}#room=legacy-id&watch=1'), (
+      target: 'legacy-id',
+      spectator: true,
+    ));
+    expect(parseInvitation('ABC!23'), isNull);
+    expect(generateRoomCode(), matches(RegExp(r'^[A-Z2-9]{6}$')));
+  });
+
+  test(
+    'colliding room codes are reissued without replacing the existing room',
+    () async {
+      final hub = FakeHub();
+      OnlineRoom make(String Function() codes) => OnlineRoom(
+        peerFactory: hub.create,
+        onState: (_, _) {},
+        onStatus: (_) {},
+        codeFactory: codes,
+      );
+      final first = make(() => 'ABC234');
+      var attempt = 0;
+      final second = make(() => attempt++ == 0 ? 'ABC234' : 'DEF567');
+      final guest = make(() => 'GHI789');
+      try {
+        await first.start();
+        await second.start();
+        await settle();
+        expect(first.roomCode, 'ABC234');
+        expect(second.roomCode, 'DEF567');
+        expect(hub.peers.containsKey('ABC234'), isTrue);
+        await guest.start(target: parseInvitation('def567')!.target);
+        await settle();
+        expect(second.ready, isTrue);
+        expect(first.ready, isFalse);
+        expect(guest.move(const Move.place(0)), isFalse);
+        expect(second.move(const Move.place(0)), isTrue);
+        await settle();
+        expect(guest.state.board[0], 1);
+      } finally {
+        await first.close();
+        await second.close();
+        await guest.close();
+      }
+    },
+  );
+  test(
+    'only the host chooses roles, including guest-first games and reconnects',
+    () async {
+      final hub = FakeHub();
+      OnlineRoom make() => OnlineRoom(
+        peerFactory: hub.create,
+        onState: (_, _) {},
+        onStatus: (_) {},
+      );
+      final host = make(), guest = make(), viewer = make();
+      try {
+        await host.start();
+        expect(host.chooseRole(2), isTrue);
+        final target = parseInvitation(host.invite)!.target;
+        await guest.start(target: target);
+        await viewer.start(target: target);
+        await settle();
+        expect(host.role, 2);
+        expect(guest.role, 1);
+        expect(guest.canMove, isTrue);
+        expect(host.canMove, isFalse);
+        expect(viewer.role, 0);
+        expect(viewer.hostRole, 2);
+        expect(guest.chooseRole(2), isFalse);
+        expect(viewer.chooseRole(1), isFalse);
+        final guestPeer = hub.peers.values.firstWhere(
+          (p) => p != hub.peers[target] && p != hub.peers.values.last,
+        );
+        await guestPeer.connections.first.send({
+          'type': 'state',
+          'version': 1,
+          'hostRole': 1,
+        });
+        expect(host.role, 2);
+        expect(guest.move(const Move.place(0)), isTrue);
+        await settle();
+        expect(host.state.board[0], 1);
+        expect(host.chooseRole(1), isFalse);
+        expect(host.move(const Move.place(2)), isTrue);
+        await settle();
+        expect(viewer.state.board[2], 2);
+        await guestPeer.connections.first.close();
+        await guest.retry();
+        await settle();
+        expect(guest.role, 1);
+        expect(viewer.hostRole, 2);
+        host.rematch();
+        guest.rematch();
+        await settle();
+        expect(host.state.moves, 0);
+        expect(guest.role, 1);
+        expect(guest.canMove, isTrue);
+        expect(host.chooseRole(1), isTrue);
+        await settle();
+        expect(guest.role, 2);
+        expect(viewer.hostRole, 1);
+        expect(host.canMove, isTrue);
+      } finally {
+        await host.close();
+        await guest.close();
+        await viewer.close();
+      }
+    },
+  );
   test('invite parsing accepts shared Web text and custom native links', () {
     expect(parseInvitation('遊ぼう！\n${webGameUrl}#room=friend&watch=1'), (
       target: 'friend',

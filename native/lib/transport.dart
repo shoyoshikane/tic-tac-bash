@@ -10,6 +10,7 @@ abstract class RoomConnection {
 
 abstract class RoomPeer {
   Future<void> start({
+    String? peerId,
     required void Function(String) onOpen,
     required void Function(RoomConnection) onConnection,
     required void Function(String) onError,
@@ -17,3 +18,5 @@ abstract class RoomPeer {
   Future<RoomConnection> connect(String target, Map<String, dynamic> metadata);
   Future<void> dispose();
 }
+
+const peerIdTaken = 'peer-id-taken';
