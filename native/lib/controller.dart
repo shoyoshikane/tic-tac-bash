@@ -20,7 +20,7 @@ class TurnPresentation {
   final GameState before, after;
   final Move move;
   final List<Slide> steps;
-  Duration get duration => Duration(milliseconds: steps.isEmpty ? 300 : 450);
+  Duration get duration => Duration(milliseconds: steps.isEmpty ? 300 : 350);
 }
 
 class GameController extends ChangeNotifier {
@@ -268,11 +268,16 @@ class GameController extends ChangeNotifier {
   }
 
   String get turnLabel {
-    if (presenting) return '手を表示中';
-    if (state.result != null)
-      return state.result == 0
-          ? '引き分け'
-          : '${state.result == 1 ? '先攻' : '後攻'}の勝ち';
+    if (presenting) return '';
+    if (state.result != null) {
+      if (state.result == 0) return '引き分け';
+      if (spectator || readOnly) return '${state.result == 1 ? '先攻' : '後攻'}の勝ち';
+      return state.result == localRole
+          ? 'あなたの勝ち！'
+          : online
+          ? '相手の勝ち'
+          : 'CPUの勝ち';
+    }
     if (online) {
       if (room?.ready != true) return '接続待ち';
       if (spectator)
@@ -283,13 +288,12 @@ class GameController extends ChangeNotifier {
   }
 
   String get hint {
-    if (presenting) return '動いたコマを確認しています';
+    if (presenting) return '';
     if (spectator)
       return room?.ready == true && room?.playing == true
           ? '観戦中'
           : '対戦の再接続を待っています';
-    if (state.result != null)
-      return state.result == 0 ? 'もう一局、どうぞ。' : '3つ、揃いました。';
+    if (state.result != null) return state.result == 0 ? 'もう一局、どうぞ。' : '';
     if (!canInteract) return online ? '相手の手を待っています' : '考えています…';
     return 'タップで置く・ドラッグで弾く';
   }

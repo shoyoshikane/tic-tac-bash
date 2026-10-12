@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'controller.dart';
@@ -214,8 +215,7 @@ class _GameScreenState extends State<GameScreen> {
     try {
       await SharePlus.instance.share(
         ShareParams(
-          text: '一緒にハイテンション三目並べを遊ぼう！\n$invite',
-          subject: 'ハイテンション三目並べ',
+          uri: Uri.parse(invite),
           mailToFallbackEnabled: false,
           sharePositionOrigin: box == null
               ? null
@@ -319,31 +319,29 @@ class _GameScreenState extends State<GameScreen> {
                           border: Border.all(color: ink.withValues(alpha: .15)),
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        child: IntrinsicWidth(
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: _mode(
-                                  'CPU対戦',
-                                  !game.online,
-                                  ink,
-                                  () async {
-                                    if (!game.online) return;
-                                    if (await _confirmLeave())
-                                      await game.startCpu();
-                                  },
-                                ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _mode(
+                                'CPU対戦',
+                                !game.online,
+                                ink,
+                                () async {
+                                  if (!game.online) return;
+                                  if (await _confirmLeave())
+                                    await game.startCpu();
+                                },
                               ),
-                              Expanded(
-                                child: _mode(
-                                  'オンライン対戦',
-                                  game.online,
-                                  ink,
-                                  _online,
-                                ),
+                            ),
+                            Expanded(
+                              child: _mode(
+                                'オンライン対戦',
+                                game.online,
+                                ink,
+                                _online,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 26),
@@ -434,9 +432,10 @@ class _GameScreenState extends State<GameScreen> {
                               ),
                             ],
                           ),
-                        if (game.room?.ready != true ||
-                            game.room!.localVote ||
-                            game.room!.remoteVote)
+                        if (game.roomStatus.isNotEmpty &&
+                            (game.room?.ready != true ||
+                                game.room!.localVote ||
+                                game.room!.remoteVote))
                           Text(
                             game.roomStatus,
                             style: TextStyle(color: ink, fontSize: 11),
@@ -481,37 +480,90 @@ class _GameScreenState extends State<GameScreen> {
                         ),
                         const SizedBox(height: 14),
                       ],
-                      GameBoard(game: game),
-                      const SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Stack(
+                        key: const Key('game-board-stack'),
+                        alignment: Alignment.center,
                         children: [
-                          _miniStone(
-                            game.state.result == null || game.state.result == 0
-                                ? game.state.turn
-                                : game.state.result!,
-                            8,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            game.turnLabel,
-                            key: const Key('turn-label'),
-                            style: TextStyle(
-                              color: ink,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                          GameBoard(key: const Key('game-board'), game: game),
+                          if (game.state.result != null && !game.presenting)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Center(
+                                  child: TweenAnimationBuilder<double>(
+                                    key: ValueKey(game.state.result),
+                                    tween: Tween(begin: 0, end: 1),
+                                    duration: const Duration(milliseconds: 200),
+                                    builder: (context, opacity, child) =>
+                                        Opacity(opacity: opacity, child: child),
+                                    child: Container(
+                                      key: const Key('result-overlay'),
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
+                                      color: ink.withValues(alpha: .85),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          if (watching &&
+                                              game.state.result != 0) ...[
+                                            _miniStone(game.state.result!, 24),
+                                            const SizedBox(width: 16),
+                                          ],
+                                          Text(
+                                            game.state.result == 0
+                                                ? 'DRAW'
+                                                : watching ||
+                                                      game.state.result ==
+                                                          game.localRole
+                                                ? 'WIN'
+                                                : 'LOSE',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 44,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 6,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        game.hint,
-                        style: TextStyle(
-                          color: ink.withValues(alpha: .7),
-                          fontSize: 11,
+                      const SizedBox(height: 20),
+                      if (game.state.result == null && !game.presenting)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _miniStone(game.state.turn, 8),
+                            const SizedBox(width: 8),
+                            Text(
+                              game.turnLabel,
+                              key: const Key('turn-label'),
+                              style: TextStyle(
+                                color: ink,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                      if (game.state.result == null &&
+                          game.hint.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          game.hint,
+                          style: TextStyle(
+                            color: ink.withValues(alpha: .7),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -594,10 +646,18 @@ class _GameScreenState extends State<GameScreen> {
         style: TextButton.styleFrom(
           foregroundColor: active ? Colors.white : ink,
           backgroundColor: active ? ink : Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
         onPressed: action,
-        child: Text(title, style: const TextStyle(fontSize: 12)),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            title,
+            maxLines: 1,
+            softWrap: false,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
       );
   Widget _player(int p, Color ink) {
     final count = game.state.board.where((v) => v == p).length;
@@ -846,6 +906,24 @@ class _HistoryThumbnail extends StatelessWidget {
   );
 }
 
+// Claim drags at pointer down only when they begin on a playable own stone.
+// Other touches stay available to the surrounding scroll view and tap handler.
+class _StoneDragGestureRecognizer extends PanGestureRecognizer {
+  bool Function(Offset)? canStart;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) =>
+      event is PointerDownEvent &&
+      canStart?.call(event.localPosition) == true &&
+      super.isPointerAllowed(event);
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+}
+
 class GameBoard extends StatefulWidget {
   const GameBoard({super.key, required this.game});
   final GameController game;
@@ -1063,19 +1141,45 @@ class _GameBoardState extends State<GameBoard>
                 // Accepted Flutter drags also emit onPanEnd on pointer cancel.
                 // Clear the preview before the recognizer processes that event.
                 onPointerCancel: (_) => _cancel(),
-                child: GestureDetector(
+                child: RawGestureDetector(
                   key: const Key('board'),
                   behavior: HitTestBehavior.opaque,
-                  onPanDown: (d) {
-                    _origin = d.localPosition;
-                  },
-                  onPanStart: _start,
-                  onPanUpdate: (d) => _update(d.localPosition),
-                  onPanEnd: (_) => _end(),
-                  onPanCancel: _cancel,
-                  onTapUp: (d) {
-                    final i = _cell(d.localPosition);
-                    if (i != null) _tap(i);
+                  gestures: {
+                    _StoneDragGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                          _StoneDragGestureRecognizer
+                        >(
+                          _StoneDragGestureRecognizer.new,
+                          (recognizer) => recognizer
+                            ..canStart = (position) {
+                              final i = _cell(position);
+                              return game.canInteract &&
+                                  i != null &&
+                                  game.state.board[i] == game.state.turn;
+                            }
+                            ..onDown = (d) {
+                              _origin = d.localPosition;
+                            }
+                            ..onStart = _start
+                            ..onUpdate = (d) {
+                              _update(d.localPosition);
+                            }
+                            ..onEnd = (_) {
+                              _end();
+                            }
+                            ..onCancel = _cancel,
+                        ),
+                    TapGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                          TapGestureRecognizer
+                        >(
+                          TapGestureRecognizer.new,
+                          (recognizer) => recognizer
+                            ..onTapUp = (d) {
+                              final i = _cell(d.localPosition);
+                              if (i != null) _tap(i);
+                            },
+                        ),
                   },
                   child: Stack(
                     children: [
@@ -1112,7 +1216,12 @@ class _GameBoardState extends State<GameBoard>
                                     ? const Color(0xffd6e0d7)
                                     : const Color(0xffe8ece5),
                                 borderRadius: BorderRadius.circular(7),
-                                border: _selected == i
+                                border: winning.contains(i)
+                                    ? Border.all(
+                                        color: const Color(0xffb48129),
+                                        width: 2.5,
+                                      )
+                                    : _selected == i
                                     ? Border.all(
                                         color: const Color(0xff7d9284),
                                         width: 1.5,

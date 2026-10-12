@@ -8,6 +8,158 @@ import 'fakes.dart';
 
 void main() {
   testWidgets(
+    'reach and winning moves preserve the board and animate for both colors',
+    (tester) async {
+      for (final player in [1, 2]) {
+        for (final win in [false, true]) {
+          final game = GameController()..cpuRole = player;
+          final board = List<int>.filled(25, 0)
+            ..[0] = player
+            ..[1] = player;
+          if (win) board[3] = player;
+          game.state = GameState(board: board, turn: player);
+          await tester.pumpWidget(GameApp(game: game));
+          final boardState = tester.state(find.byType(GameBoard));
+          expect(
+            game.move(win ? const Move.flick(3, 0, -1) : const Move.place(3)),
+            isTrue,
+          );
+          await tester.pump();
+          expect(tester.state(find.byType(GameBoard)), same(boardState));
+          expect(game.presenting, isTrue);
+          if (win) {
+            expect(game.state.result, player);
+            expect(find.byKey(const Key('moving-stone')), findsOneWidget);
+            expect(find.byKey(const Key('result-overlay')), findsNothing);
+            final start = tester.getTopLeft(
+              find.byKey(const Key('moving-stone')),
+            );
+            await tester.pump(const Duration(milliseconds: 150));
+            expect(
+              tester.getTopLeft(find.byKey(const Key('moving-stone'))).dx,
+              lessThan(start.dx),
+            );
+            await tester.pump(const Duration(milliseconds: 250));
+            expect(find.byKey(const Key('result-overlay')), findsOneWidget);
+          } else {
+            expect(game.reachPlayers, contains(player));
+            final placed = find.descendant(
+              of: find.byKey(const Key('cell-3')),
+              matching: find.byType(Transform),
+            );
+            expect(placed, findsOneWidget);
+            expect(tester.widget<Transform>(placed).transform.storage[0], 0);
+            await tester.pump(const Duration(milliseconds: 150));
+            expect(
+              tester.widget<Transform>(placed).transform.storage[0],
+              greaterThan(0),
+            );
+          }
+          await tester.pumpWidget(const SizedBox());
+          game.dispose();
+        }
+      }
+    },
+  );
+  testWidgets(
+    'own-stone vertical drags claim the touch while other swipes scroll',
+    (tester) async {
+      final game = GameController();
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final board = List<int>.filled(25, 0)
+        ..[12] = 1
+        ..[0] = 2;
+      game.state = GameState(board: board, moves: 2);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 320,
+              child: SingleChildScrollView(
+                controller: scroll,
+                child: Column(
+                  children: [
+                    GameBoard(game: game),
+                    const SizedBox(height: 1000),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final own = tester.getCenter(find.byKey(const Key('cell-12')));
+      final cancelled = await tester.startGesture(own);
+      await cancelled.moveTo(own - const Offset(0, 60));
+      await tester.pump();
+      expect(scroll.offset, 0);
+      await cancelled.cancel();
+      await tester.pump();
+      expect(game.state.moves, 2);
+
+      for (final point in [
+        tester.getCenter(find.byKey(const Key('cell-18'))),
+        tester.getCenter(find.byKey(const Key('cell-0'))),
+        const Offset(160, 400),
+      ]) {
+        scroll.jumpTo(0);
+        await tester.pump();
+        await tester.dragFrom(point, const Offset(0, -60));
+        await tester.pumpAndSettle();
+        expect(scroll.offset, greaterThan(0));
+        expect(game.state.moves, 2);
+      }
+      scroll.jumpTo(0);
+      await tester.pump();
+      final flick = await tester.startGesture(own);
+      await flick.moveTo(own - const Offset(0, 60));
+      await tester.pump();
+      expect(scroll.offset, 0);
+      await flick.up();
+      await tester.pump();
+      expect(game.state.moves, 3);
+      expect(game.state.board[2], 1);
+      await tester.pumpWidget(const SizedBox());
+      game.dispose();
+    },
+  );
+  testWidgets('results identify the winner and emphasize the winning cells', (
+    tester,
+  ) async {
+    for (final winner in [1, 2, 0]) {
+      final game = GameController();
+      final board = List<int>.filled(25, 0);
+      if (winner != 0) board.setRange(0, 3, List.filled(3, winner));
+      game.state = GameState(board: board, result: winner);
+      await tester.pumpWidget(GameApp(key: ValueKey(winner), game: game));
+      expect(find.byKey(const Key('result-overlay')), findsOneWidget);
+      expect(
+        find.text(
+          winner == 1
+              ? 'WIN'
+              : winner == 2
+              ? 'LOSE'
+              : 'DRAW',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('3つ、揃いました。'), findsNothing);
+      expect(find.byIcon(Icons.emoji_events_rounded), findsNothing);
+      if (winner != 0) {
+        for (final i in [0, 1, 2]) {
+          final cell = tester.widget<Container>(find.byKey(Key('cell-$i')));
+          expect(
+            (cell.decoration! as BoxDecoration).border,
+            Border.all(color: const Color(0xffb48129), width: 2.5),
+          );
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
+      game.dispose();
+    }
+  });
+  testWidgets(
     'choosing second lets the CPU open and undo keeps the human white turn',
     (tester) async {
       final game = GameController();
@@ -98,7 +250,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.byKey(const Key('last-turn')), findsNothing);
       expect(host.move(const Move.flick(0, 0, 1)), isTrue);
-      expect(host.lastTurn!.duration, const Duration(milliseconds: 450));
+      expect(host.lastTurn!.duration, const Duration(milliseconds: 350));
       await tester.pump();
       expect(host.presenting, isTrue);
       expect(find.byKey(const Key('moving-stone')), findsOneWidget);

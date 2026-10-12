@@ -130,7 +130,7 @@ class OnlineRoom {
           if (host) {
             _timeout?.cancel();
             invite = '$webGameUrl#room=$id';
-            status(ready ? '友達と接続しました。' : '招待リンクを友達に送ってください。');
+            status(ready ? '友達と接続しました。' : '');
           } else if (_opponent == null)
             unawaited(_connect(peer));
         },
